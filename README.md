@@ -33,7 +33,7 @@ sqlite3 db.sqlite
 node index.js
 ```
 
-> Le serveur écoute par défaut sur `http://localhost:3000`
+> Le serveur écoute par défaut sur `http://localhost:8000`
 
 ---
 

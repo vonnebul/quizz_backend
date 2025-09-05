@@ -3,8 +3,9 @@ const router = express.Router();
 const {
   getUserById,
 } = require('../controllers/userController');
+const { verifyToken } = require ('../middlewares/authMiddleware')
 
-router.get('/:id', getUserById);
+router.get('/:id', verifyToken, getUserById);
 
 
 module.exports = router;

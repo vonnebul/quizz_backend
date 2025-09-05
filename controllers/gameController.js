@@ -3,49 +3,49 @@ const db = require('../config/db');
 exports.createGame = (req, res) => {
   const { userId, quizId, answers } = req.body;
 
-  if (!userId || !quizId)
-    return res.status(400).json({ error: 'userId et quizId requis' });
+  if (!userId || !quizId || !Array.isArray(answers)) {
+    return res.status(400).json({ error: 'userId, quizId et answers requis' });
+  }
 
-  const date_played = new Date().toISOString();
-  const total_questions = answers.length;
-  const score = answers.filter(a => a.correct).length;
-
-  db.run(
-    'INSERT INTO games (user_id, quiz_id, score, total_questions, date_played) VALUES (?, ?, ?, ?, ?)',
-    [userId, quizId, score, total_questions, date_played],
-    function (err) {
+  db.all(
+    'SELECT id, answer FROM questions WHERE quiz_id = ?',
+    [quizId],
+    (err, correctAnswers) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      const gameId = this.lastID;
+      const correctMap = {};
+      correctAnswers.forEach(q => {
+        correctMap[q.id] = q.answer;
+      });
 
-      if (Array.isArray(answers) && answers.length > 0) {
-        let remaining = answers.length;
-        answers.forEach(a => {
-          db.run(
-            'INSERT INTO game_answers (game_id, question_id, selected, correct) VALUES (?, ?, ?, ?)',
-            [gameId, a.questionId, a.answer, a.correct ? 1 : 0],
-            function (err2) {
-              if (err2) console.error('Erreur insert answer:', err2.message);
-              remaining--;
-              if (remaining === 0) {
-                db.get('SELECT * FROM games WHERE id = ?', [gameId], (err3, gameRow) => {
-                  if (err3) return res.status(500).json({ error: err3.message });
-                  res.json({ game: gameRow });
-                });
-              }
-            }
-          );
-        });
-      } else {
-        db.get('SELECT * FROM games WHERE id = ?', [gameId], (err3, gameRow) => {
-          if (err3) return res.status(500).json({ error: err3.message });
-          res.json({ game: gameRow });
-        });
-      }
+      let score = 0;
+      answers.forEach(a => {
+        if (correctMap[a.questionId] && correctMap[a.questionId] === a.answer) {
+          score++;
+        }
+      });
+
+      const total_questions = answers.length;
+      const date_played = new Date().toISOString();
+
+      db.run(
+        'INSERT INTO games (user_id, quiz_id, score, total_questions, date_played) VALUES (?, ?, ?, ?, ?)',
+        [userId, quizId, score, total_questions, date_played],
+        function (err2) {
+          if (err2) return res.status(500).json({ error: err2.message });
+
+          const gameId = this.lastID;
+          db.get('SELECT * FROM games WHERE id = ?', [gameId], (err3, gameRow) => {
+            if (err3) return res.status(500).json({ error: err3.message });
+            res.json({ game: gameRow });
+          });
+        }
+      );
     }
   );
 };
 
+// Récupérer l’historique d’un utilisateur
 exports.getUserGames = (req, res) => {
   const { userId } = req.params;
   db.all(
@@ -62,6 +62,7 @@ exports.getUserGames = (req, res) => {
   );
 };
 
+// Récupérer une partie par son ID
 exports.getGameById = (req, res) => {
   const { id } = req.params;
 
@@ -75,29 +76,12 @@ exports.getGameById = (req, res) => {
     (err, gameRow) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!gameRow) return res.status(404).json({ error: 'Partie non trouvée' });
-
-      db.all(
-        `SELECT ga.question_id, ga.selected, ga.correct, qs.question, qs.choices
-         FROM game_answers ga
-         JOIN questions qs ON ga.question_id = qs.id
-         WHERE ga.game_id = ?`,
-        [id],
-        (err2, answers) => {
-          if (err2) return res.status(500).json({ error: err2.message });
-          const ans = answers.map(a => ({
-            question_id: a.question_id,
-            question: a.question,
-            choices: JSON.parse(a.choices),
-            selected: a.selected,
-            correct: !!a.correct
-          }));
-          res.json({ ...gameRow, answers: ans });
-        }
-      );
+      res.json(gameRow);
     }
   );
 };
 
+// Classement global
 exports.getAllGames = (req, res) => {
   db.all(
     `SELECT g.id, u.username, q.title AS quiz_title, g.score, g.total_questions, g.date_played
